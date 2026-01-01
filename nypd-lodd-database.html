@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYPD LOD Database</title>
+    <script src="https://unpkg.com/lunr/lunr.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'nypd-navy': '#0A1F3D',
+                        'nypd-blue': '#003087',
+                        'nypd-accent': '#1E40AF',
+                        'nypd-gold': '#D4AF37',
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        html, body {
+            background-color: #0f172a !important;
+            color: #e2e8f0;
+        }
+        body {
+            background: #0f172a;
+        }
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            box-shadow: 0 15px 30px -8px rgba(0, 0, 0, 0.5);
+            border-radius: 1.5rem;
+        }
+        .media-canvas {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            text-align: center;
+            padding: 1rem;
+            border: 2px dashed #475569;
+            border-radius: 1.5rem;
+            min-height: 520px;
+            position: relative;
+        }
+        .media-canvas img, .media-canvas video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 1rem;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .media-canvas video {
+            width: 100%;
+            height: 100%;
+        }
+        .placeholder-info {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .media-canvas.has-media .placeholder-info {
+            display: none !important;
+        }
+        .tweet-container {
+            width: 100%;
+            max-width: none;
+            padding: 0;
+            margin: 0 auto;
+        }
+        .tweet-container .twitter-tweet {
+            margin: 0 auto !important;
+        }
+        .tweet-container iframe {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        .btn {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 600;
+            border-radius: 9999px;
+            padding: 0.875rem 2rem;
+            font-size: 1.1rem;
+            text-align: center;
+        }
+        .btn:hover {
+            transform: translateY(-3px) scale(1.03);
+        }
+        .btn:active {
+            transform: translateY(0) scale(0.98);
+        }
+        .btn-download, .btn-copy, .btn-see {
+            background: #334155;
+            color: #e2e8f0;
+            box-shadow: 0 8px 20px rgba(51, 65, 85, 0.4);
+        }
+        .btn-see {
+            background: linear-gradient(to right, #D4AF37, #fbbf24);
+            color: #0f172a;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="max-w-6xl mx-auto px-6 py-16">
+        <!-- Header -->
+        <header class="text-center mb-16">
+            <h1 class="text-5xl font-bold text-white mb-4">NYPD LOD Database</h1>
+            <p class="text-xl text-slate-300">Search officers or scroll to browse</p>
+        </header>
+
+        <!-- Search -->
+        <div class="max-w-3xl mx-auto mb-16">
+            <input type="search" id="search" placeholder="Search by name, precinct, date (any format), or tags..."
+                   class="w-full px-8 py-5 text-lg rounded-full bg-slate-800 border border-slate-700 text-white placeholder-slate-400 shadow-2xl focus:outline-none focus:ring-4 focus:ring-nypd-blue/50" autofocus>
+        </div>
+
+        <!-- Today's LOD + Upcoming -->
+        <div id="today-section" class="mb-16"></div>
+        <div id="upcoming-section" class="mb-20"></div>
+
+        <!-- Results: One per row -->
+        <div id="results" class="grid gap-20"></div>
+    </div>
+
+    <script>
+        const today = new Date();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// === PLACE ALL OFFICER DATA HERE ===
+const data = [
+    {
+        "lastName": "riverajason",
+        "officer": "Detective Jason Rivera",
+        "dateOfDeath": "2022-01-21",
+        "tags": "jason rivera wilbert mora harlem domestic gunfire 32pct",
+        "captionTemplate": "Today we solemnly remember the {years}-year anniversary of the tragic loss of Detective Jason Rivera, who was killed by gunfire in the line of duty while responding to a domestic call in Harlem. We honor his bravery and sacrifice, and we vow to #NeverForget. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1881703356315627596"
+    },
+    {
+        "lastName": "mora",
+        "officer": "Detective Wilbert Mora",
+        "dateOfDeath": "2022-01-25",
+        "tags": "wilbert mora jason rivera harlem gunfire 32pct",
+        "captionTemplate": "On this day {years} years ago, Detective Wilbert Mora succumbed to gunshot wounds sustained in the line of duty alongside his partner, Detective Jason Rivera. His legacy of service lives on. We will #NeverForget his sacrifice. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1883190981123588441"
+    },
+    {
+        "lastName": "familia",
+        "officer": "Detective Miosotis Familia",
+        "dateOfDeath": "2017-07-05",
+        "tags": "miosotis familia assassination gunfire bronx 46pct",
+        "captionTemplate": "{years} years ago today, Detective Miosotis Familia was assassinated by gunfire while sitting in her command post in the Bronx. A devoted mother and officer, her courage and sacrifice remain in our hearts. We will #NeverForget. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1941482402167107891"
+    },
+    {
+        "lastName": "holder",
+        "officer": "Detective Randolph Holder",
+        "dateOfDeath": "2015-10-20",
+        "tags": "randolph holder gunfire pursuit east harlem psa5",
+        "captionTemplate": "{years} years ago, Detective Randolph Holder was fatally shot while pursuing an armed suspect in East Harlem. His heroism and sacrifice will never be forgotten. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1980266204204859604"
+    },
+    {
+        "lastName": "tuozzolo",
+        "officer": "Sergeant Paul Tuozzolo",
+        "dateOfDeath": "2016-11-04",
+        "tags": "paul tuozzolo gunfire armed suspect bronx 43pct",
+        "captionTemplate": "Today marks {years} years since Sergeant Paul Tuozzolo was fatally shot confronting an armed suspect in the Bronx. He gave his life protecting New Yorkers. We will never forget his sacrifice. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1985793831069970523"
+    },
+    {
+        "lastName": "ramosliu",
+        "officer": "Detectives Rafael Ramos and Wenjian Liu",
+        "dateOfDeath": "2014-12-20",
+        "tags": "rafael ramos wenjian liu ambush gunfire assassination 84pct",
+        "captionTemplate": "{years} years ago today, Detectives Rafael Ramos and Wenjian Liu were assassinated by gunfire while sitting in their patrol car in Brooklyn. We honor their memory and vow to #NeverForget their sacrifice for New York City.",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/2002411231051764213"
+    },
+    {
+        "lastName": "figoski",
+        "officer": "Detective Peter Figoski",
+        "dateOfDeath": "2011-12-12",
+        "tags": "peter figoski gunfire home invasion brooklyn 75pct",
+        "captionTemplate": "{years} years ago today, Detective Peter Figoski was shot and killed responding to a home invasion in Brooklyn. A devoted father and hero, we will never forget his ultimate sacrifice. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1999464575972897081"
+    },
+    {
+        "lastName": "enchautegui",
+        "officer": "Detective Daniel Enchautegui",
+        "dateOfDeath": "2005-12-10",
+        "tags": "daniel enchautegui off duty gunfire burglary medal of honor",
+        "captionTemplate": "{years} years ago, off-duty Detective Daniel Enchautegui was fatally shot confronting burglars next door. A Medal of Honor recipient, his heroism will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1998878889486221757"
+    },
+    {
+        "lastName": "nemorinandrews",
+        "officer": "Detectives James Nemorin and Rodney Andrews",
+        "dateOfDeath": "2003-03-10",
+        "tags": "james nemorin rodney andrews undercover gunfire assassination",
+        "captionTemplate": "{years} years ago, Detectives James Nemorin and Rodney Andrews were assassinated by gunfire during an undercover operation. Their bravery lives on. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "byrne",
+        "officer": "Police Officer Edward Byrne",
+        "dateOfDeath": "1988-02-26",
+        "tags": "edward byrne assassination gunfire queens witness protection",
+        "captionTemplate": "Today marks {years} years since Police Officer Edward Byrne was assassinated by gunfire while guarding a witness in Queens. His sacrifice in the fight against crime endures. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "venable",
+        "officer": "Police Officer Robert Venable",
+        "dateOfDeath": "1987-09-22",
+        "tags": "robert venable gunfire armed suspects",
+        "captionTemplate": "{years} years ago, Police Officer Robert Venable was shot and killed while attempting to apprehend two armed suspects. His courage and sacrifice will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1970262101894566309"
+    },
+    {
+        "lastName": "levine",
+        "officer": "Sergeant Keith Levine",
+        "dateOfDeath": "1991-12-28",
+        "tags": "keith levine off duty gunfire robbery",
+        "captionTemplate": "Today marks {years} years since Sergeant Keith Levine was shot and killed off-duty intervening in an armed robbery. His courage and sacrifice will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/2005395835287478738"
+    },
+    {
+        "lastName": "williamsguerzon",
+        "officer": "Detectives Keith Williams and Richard Guerzon",
+        "dateOfDeath": "1989-11-13",
+        "tags": "keith williams richard guerzon gunfire prisoner transport rikers",
+        "captionTemplate": "{years} years ago, Detectives Keith Williams and Richard Guerzon were shot and killed while transporting a prisoner. Their bravery and sacrifice will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1989115341923041366"
+    },
+    {
+        "lastName": "ford",
+        "officer": "Detective Horace Ford",
+        "dateOfDeath": "1978-11-06",
+        "tags": "horace ford off duty gunfire bank robbery medal of honor",
+        "captionTemplate": "{years} years ago, off-duty Detective Horace Ford was shot and killed confronting an armed bank robber. A Medal of Honor recipient, his heroism lives on. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1986500278150177209"
+    },
+    {
+        "lastName": "guttenberg",
+        "officer": "Police Officer David Guttenberg",
+        "dateOfDeath": "1978-12-28",
+        "tags": "david guttenberg gunfire robbery army veteran",
+        "captionTemplate": "Today marks {years} years since Police Officer David Guttenberg, an Army veteran, was shot and killed during a robbery in progress. His legacy endures. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/2005388762860450007"
+    },
+    {
+        "lastName": "mahon",
+        "officer": "Police Officer Kenneth Mahon",
+        "dateOfDeath": "1974-12-28",
+        "tags": "kenneth mahon gunfire suspect bronx vietnam veteran",
+        "captionTemplate": "{years} years ago, Police Officer Kenneth Mahon, a Vietnam veteran, was shot and killed questioning a suspect in the Bronx. We honor his sacrifice. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/2005392060430405841"
+    },
+    {
+        "lastName": "lauriefoster",
+        "officer": "Police Officers Rocco Laurie and Gregory Foster",
+        "dateOfDeath": "1972-01-27",
+        "tags": "rocco laurie gregory foster assassination gunfire vietnam veterans",
+        "captionTemplate": "{years} years ago, Police Officers Rocco Laurie and Gregory Foster, both Vietnam veterans, were assassinated by gunfire. Their service and sacrifice live on. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "piagentinijones",
+        "officer": "Police Officers Joseph Piagentini and Waverly Jones",
+        "dateOfDeath": "1971-05-21",
+        "tags": "joseph piagentini waverly jones assassination gunfire harlem",
+        "captionTemplate": "On this day {years} years ago, Police Officers Joseph Piagentini and Waverly Jones were assassinated by gunfire in Harlem. We will #NeverForget.",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "hopkins",
+        "officer": "Police Officer Melvin Hopkins",
+        "dateOfDeath": "1979-09-15",
+        "tags": "melvin hopkins gunfire robbery brooklyn",
+        "captionTemplate": "On this day {years} years ago, Police Officer Melvin Hopkins was shot and killed responding to a robbery in Brooklyn. We honor his service and sacrifice. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1967628323246473544"
+    },
+    {
+        "lastName": "schimenti",
+        "officer": "Police Officer Thomas Schimenti",
+        "dateOfDeath": "1979-08-17",
+        "tags": "thomas schimenti gunfire bank robbery transit",
+        "captionTemplate": "{years} years ago, Transit Officer Thomas Schimenti was shot and killed pursuing a bank robbery suspect. His courage endures. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1957204131015192728"
+    },
+    {
+        "lastName": "dunston",
+        "officer": "Police Officer James Dunston",
+        "dateOfDeath": "1980-11-20",
+        "tags": "james dunston gunfire robbery psa5 army veteran",
+        "captionTemplate": "{years} years ago, Officer James Dunston was shot and killed responding to a robbery. An Army veteran, father, and husband—his sacrifice will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1991476796756283398"
+    },
+    {
+        "lastName": "ryman",
+        "officer": "Police Officer Harry Ryman",
+        "dateOfDeath": "1980-08-14",
+        "tags": "harry ryman off duty gunfire car theft",
+        "captionTemplate": "On this day {years} years ago, off-duty Officer Harry Ryman was shot and killed confronting car thieves. His selfless bravery will always be remembered. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1956129959581196521"
+    },
+    {
+        "lastName": "pegues",
+        "officer": "Police Officer Thomas Pegues",
+        "dateOfDeath": "1974-08-19",
+        "tags": "thomas pegues gunfire car stop queens vietnam veteran",
+        "captionTemplate": "On this day {years} years ago, Police Officer Thomas Pegues, a Vietnam veteran, was shot and killed during a car stop in Queens. His bravery and service will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1957785131831197717"
+    },
+    {
+        "lastName": "morabito",
+        "officer": "Sergeant Joseph Morabito",
+        "dateOfDeath": "1971-08-26",
+        "tags": "joseph morabito gunfire belt parkway",
+        "captionTemplate": "On this day {years} years ago, Sergeant Joseph Morabito was shot and killed in the line of duty on the Belt Parkway. His bravery and service to New York City will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1960357185143103890"
+    },
+    {
+        "lastName": "fontanezdiaz",
+        "officer": "Police Officer Hector Fontanez-Diaz",
+        "dateOfDeath": "1991-09-12",
+        "tags": "hector fontanez diaz gunfire pursuit armed suspect",
+        "captionTemplate": "Today marks {years} years since Police Officer Hector Fontanez-Diaz was shot and killed pursuing an armed suspect. His sacrifice will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": "https://x.com/NYPDnews/status/1966498014870057129"
+    },
+    {
+        "lastName": "gadell",
+        "officer": "Police Officer Scott A. Gadell",
+        "dateOfDeath": "1986-06-28",
+        "tags": "scott gadell gunfire foot pursuit queens",
+        "captionTemplate": "{years} years ago today, Police Officer Scott A. Gadell was shot and killed during a foot pursuit of an armed suspect in Queens. His bravery and sacrifice will never be forgotten. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "burns",
+        "officer": "Police Officer Robert Burns",
+        "dateOfDeath": "1985-10-18",
+        "tags": "robert burns gunfire robbery brooklyn",
+        "captionTemplate": "On this day {years} years ago, Police Officer Robert Burns was fatally shot responding to a robbery in Brooklyn. We honor his ultimate sacrifice. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "conroy",
+        "officer": "Police Officer John Conroy",
+        "dateOfDeath": "1984-12-27",
+        "tags": "john conroy gunfire domestic queens",
+        "captionTemplate": "{years} years ago, Police Officer John Conroy was shot and killed responding to a domestic dispute in Queens. His courage endures. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "knapp",
+        "officer": "Police Officer Edward Knapp",
+        "dateOfDeath": "1983-11-18",
+        "tags": "edward knapp gunfire robbery manhattan",
+        "captionTemplate": "Today marks {years} years since Police Officer Edward Knapp was killed by gunfire during a robbery response in Manhattan. #NeverForget his sacrifice. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "mullen",
+        "officer": "Police Officer Thomas Mullen",
+        "dateOfDeath": "1982-09-03",
+        "tags": "thomas mullen gunfire suspect apprehension bronx",
+        "captionTemplate": "{years} years ago, Police Officer Thomas Mullen was shot and killed attempting to apprehend a suspect in the Bronx. We honor his bravery. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "brooks",
+        "officer": "Police Officer Anthony P. Brooks",
+        "dateOfDeath": "1981-06-17",
+        "tags": "anthony brooks gunfire robbery queens",
+        "captionTemplate": "On this day {years} years ago, Police Officer Anthony P. Brooks was fatally shot during a robbery in Queens. His legacy lives on. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "capra",
+        "officer": "Police Officer Robert Capra",
+        "dateOfDeath": "1980-03-14",
+        "tags": "robert capra gunfire domestic brooklyn",
+        "captionTemplate": "{years} years ago, Police Officer Robert Capra was shot and killed responding to a domestic call in Brooklyn. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "starsiak",
+        "officer": "Police Officer John Starsiak",
+        "dateOfDeath": "1979-03-23",
+        "tags": "john starsiak gunfire robbery manhattan",
+        "captionTemplate": "Today we remember Police Officer John Starsiak, shot and killed {years} years ago during a robbery in Manhattan. His sacrifice honored forever. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "meade",
+        "officer": "Police Officer George R. Meade",
+        "dateOfDeath": "1975-05-16",
+        "tags": "george meade off duty gunfire robbery bronx",
+        "captionTemplate": "{years} years ago, off-duty Police Officer George R. Meade was fatally shot intervening in a robbery in the Bronx. A true hero. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "laureano",
+        "officer": "Police Officer Carlos Laureano",
+        "dateOfDeath": "1973-12-28",
+        "tags": "carlos laureano gunfire robbery brooklyn",
+        "captionTemplate": "On this day {years} years ago, Police Officer Carlos Laureano was shot and killed responding to a robbery in Brooklyn. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "sanchez",
+        "officer": "Police Officer Anthony Sanchez",
+        "dateOfDeath": "1997-05-19",
+        "tags": "anthony sanchez gunfire home invasion",
+        "captionTemplate": "Today marks {years} years since Police Officer Anthony Sanchez was shot and killed responding to a home invasion. His bravery remembered. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "mosomillo",
+        "officer": "Police Officer Anthony Mosomillo",
+        "dateOfDeath": "1998-05-26",
+        "tags": "anthony mosomillo gunfire suspect apprehension",
+        "captionTemplate": "{years} years ago, Police Officer Anthony Mosomillo was killed by gunfire while apprehending a suspect. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "cardillo",
+        "officer": "Police Officer Philip Cardillo",
+        "dateOfDeath": "1972-04-20",
+        "tags": "philip cardillo gunfire mosque harlem",
+        "captionTemplate": "{years} years ago, Police Officer Philip Cardillo was fatally shot inside a Harlem mosque responding to a call. His sacrifice honored. #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+    {
+        "lastName": "carter",
+        "officer": "Police Officer Gerard Carter",
+        "dateOfDeath": "1998-07-31",
+        "tags": "gerard carter gunfire robbery bronx",
+        "captionTemplate": "{years} years ago, Police Officer Gerard Carter was killed by gunfire responding to a robbery in the Bronx. #NeverForget #FidelisAdMortem",
+        "exampleTweetLink": ""
+    },
+
+
+
+
+
+
+
+
+
+            {
+                "lastName": "diller",
+                "officer": "Detective Jonathan Diller",
+                "dateOfDeath": "2024-03-25",
+                "tags": "jonathan diller gunfire traffic stop queens 105pct",
+                "captionTemplate": "Today marks {years} years since Detective Jonathan Diller was fatally shot during a traffic stop in Queens. A devoted husband and father, his ultimate sacrifice will never be forgotten. #FidelisAdMortem",
+                "exampleTweetLink": ""
+            },
+            {
+                "lastName": "mulkeen",
+                "officer": "Detective Brian Mulkeen",
+                "dateOfDeath": "2019-09-29",
+                "tags": "brian mulkeen gunfire bronx",
+                "captionTemplate": "Today marks {years} years since Detective Brian Mulkeen lost his life in the line of duty. We honor his memory and vow to #NeverForget his sacrifice. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1972649368537997814"
+            },
+            {
+                "lastName": "raffertyparker",
+                "officer": "Detectives Patrick Rafferty and Robert Parker",
+                "dateOfDeath": "1971-09-10",
+                "tags": "patrick rafferty robert parker gunfire domestic",
+                "captionTemplate": "{years} years ago today, Detectives Patrick Rafferty and Robert Parker gave their lives responding to a domestic violence call. Their courage and sacrifice will never be forgotten. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1965843620994445531"
+            },
+            {
+                "lastName": "nugent",
+                "officer": "Patrolman Kenneth Nugent",
+                "dateOfDeath": "1971-08-21",
+                "tags": "kenneth nugent gunfire armed robbery queens 103pct",
+                "captionTemplate": "On this day {years} years ago, Patrolman Kenneth Nugent made the ultimate sacrifice after being shot interrupting an armed robbery in Queens. We will always honor his memory and legacy. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1958608756700586240"
+            },
+            {
+                "lastName": "reddyglover",
+                "officer": "Sergeant Frederick Reddy and Police Officer Andrew Glover",
+                "dateOfDeath": "1975-09-16",
+                "tags": "frederick reddy andrew glover gunfire 9pct",
+                "captionTemplate": "{years} years ago, Sgt. Frederick Reddy and Police Officer Andrew Glover were tragically killed in the line of duty while protecting our city. We honor their courage and sacrifice. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1968055009742082498"
+            },
+            {
+                "lastName": "canavan",
+                "officer": "Patrolman Patrick M. Canavan",
+                "dateOfDeath": "1970-09-07",
+                "tags": "patrick canavan off duty gunfire street fight",
+                "captionTemplate": "On the {years}-year anniversary of his passing, we honor Patrolman Patrick M. Canavan, tragically killed off-duty intervening in a street fight. His legacy of courage lives on. #NeverForget #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1964785045916492052"
+            },
+            {
+                "lastName": "mckeon",
+                "officer": "Patrolman Francis McKeon",
+                "dateOfDeath": "1945-11-17",
+                "tags": "francis mckeon gunfire wwii navy veteran",
+                "captionTemplate": "{years} years ago today, Patrolman Francis McKeon was tragically killed on his first day back on duty after serving in WWII with the U.S. Navy. We remember this fallen hero. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1990525354767720589"
+            },
+            {
+                "lastName": "behnstedt",
+                "officer": "Patrolman Henry C. Behnstedt",
+                "dateOfDeath": "1928-11-05",
+                "tags": "henry behnstedt gunfire car thief brooklyn medal of honor",
+                "captionTemplate": "On this day {years} years ago, Patrolman Henry C. Behnstedt was killed apprehending a car thief in Brooklyn. Posthumously awarded the Medal of Honor, his bravery will never be forgotten. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1986116678242214029"
+            },
+
+
+
+
+
+
+
+
+
+
+            {
+                "lastName": "islam",
+                "officer": "Detective First Grade Didarul Islam",
+                "dateOfDeath": "2025-07-28",
+                "tags": "didarul islam gunfire off duty security manhattan",
+                "captionTemplate": "Today we solemnly remember Detective First Grade Didarul Islam, tragically shot and killed while working off-duty security. A beloved husband and father, his bravery and sacrifice will never be forgotten. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1950029976520052804"
+            },
+            {
+                "lastName": "timoshenko",
+                "officer": "Detective First Grade Russel Timoshenko",
+                "dateOfDeath": "2007-07-14",
+                "tags": "russel timoshenko gunfire car stop brooklyn",
+                "captionTemplate": "{years} years ago today, Detective First Grade Russel Timoshenko was shot during a car stop in Brooklyn and succumbed to his injuries. Just 23 years old, his quiet strength and bravery live on. We honor him always. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1944743494880248185"
+            },
+            {
+                "lastName": "scheu",
+                "officer": "Police Officer George Scheu",
+                "dateOfDeath": "1987-07-16",
+                "tags": "george scheu off duty gunfire robbery 115pct",
+                "captionTemplate": "On this day {years} years ago, off-duty Police Officer George Scheu of the 115th Precinct was shot and killed while taking action during a robbery. We will always honor his memory and legacy. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1945438457599271320"
+            },
+            {
+                "lastName": "sledge",
+                "officer": "Police Officer Cecil F. Sledge",
+                "dateOfDeath": "1980-01-28",
+                "tags": "cecil sledge gunfire dragged brooklyn",
+                "captionTemplate": "On this day {years} years ago, Police Officer Cecil F. Sledge was shot and dragged by a wanted individual in Brooklyn. We remember his life and vow to #NeverForget his service and dedication. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1884403772903825870"
+            },
+            {
+                "lastName": "hurley",
+                "officer": "Police Officer Timothy Hurley",
+                "dateOfDeath": "1974-03-09",
+                "tags": "timothy hurley gunfire robbery queens 103pct",
+                "captionTemplate": "{years} years ago, Police Officer Timothy Hurley of the 103rd Precinct was tragically shot and killed responding to a robbery in Queens. We remember his service and vow to #NeverForget. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1898690348123095276"
+            },
+            {
+                "lastName": "mcdonald",
+                "officer": "Police Officer Sean McDonald",
+                "dateOfDeath": "1994-03-15",
+                "tags": "sean mcdonald gunfire robbery army veteran",
+                "captionTemplate": "{years} years ago, Police Officer Sean McDonald, an Army veteran, was shot and killed attempting to arrest robbery suspects. We honor his sacrifice and ensure his legacy endures. #NeverForget #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1900974022084452421"
+            },
+            {
+                "lastName": "gillespie",
+                "officer": "Police Officer Kevin J. Gillespie",
+                "dateOfDeath": "1996-03-14",
+                "tags": "kevin gillespie gunfire car stop stolen vehicle usmc veteran",
+                "captionTemplate": "{years} years ago today, Police Officer Kevin J. Gillespie, a U.S. Marine Corps veteran, was shot and killed during a car stop on a stolen vehicle. We vow to #NeverForget his brave sacrifice. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1900568164905209892"
+            },
+            {
+                "lastName": "herman",
+                "officer": "Police Officer Jeff Herman",
+                "dateOfDeath": "1989-06-02",
+                "tags": "jeff herman gunfire violent dispute 71pct",
+                "captionTemplate": "Today we honor Police Officer Jeff Herman of the 71st Precinct, tragically shot and killed {years} years ago responding to a violent dispute. His legacy lives on, and we #NeverForget his sacrifice. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1929608162476216706"
+            },
+            {
+                "lastName": "caccavale",
+                "officer": "Detective George Caccavale",
+                "dateOfDeath": "1976-06-26",
+                "tags": "george caccavale gunfire",
+                "captionTemplate": "Detective George Caccavale was shot and killed while protecting New Yorkers on this day {years} years ago. He dedicated his life to serving our city and he will never be forgotten. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1938305399314387171"
+            },
+            {
+                "lastName": "schmiemann",
+                "officer": "Lieutenant Henry Schmiemann",
+                "dateOfDeath": "1974-06-20",
+                "tags": "henry schmiemann gunfire robbery queens korean war veteran",
+                "captionTemplate": "On this day {years} years ago, Lieutenant Henry Schmiemann, a Korean War veteran, was shot and killed when a gunman attempted to rob him in Queens. We forever honor his dedication. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1936077073208213635"
+            },
+            {
+                "lastName": "raffertyparker",
+                "officer": "Detectives Patrick Rafferty and Robert Parker",
+                "dateOfDeath": "1971-09-10",
+                "tags": "patrick rafferty robert parker gunfire domestic",
+                "captionTemplate": "{years} years ago today, Detectives Patrick Rafferty and Robert Parker gave their lives responding to a domestic violence call. Their courage and sacrifice will never be forgotten. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1965843620994445531"
+            },
+            {
+                "lastName": "canavan",
+                "officer": "Patrolman Patrick M. Canavan",
+                "dateOfDeath": "1970-09-07",
+                "tags": "patrick canavan off duty gunfire street fight",
+                "captionTemplate": "On the {years}-year anniversary of his passing, we honor Patrolman Patrick M. Canavan, tragically killed off-duty intervening in a street fight. His legacy of courage lives on. #NeverForget #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1964785045916492052"
+            },
+            {
+                "lastName": "mckeon",
+                "officer": "Patrolman Francis McKeon",
+                "dateOfDeath": "1945-11-17",
+                "tags": "francis mckeon gunfire wwii navy veteran",
+                "captionTemplate": "{years} years ago today, Patrolman Francis McKeon was tragically killed on his first day back on duty after serving in WWII with the U.S. Navy. We remember this fallen hero. #FidelisAdMortem",
+                "exampleTweetLink": "https://x.com/NYPDnews/status/1990525354767720589"
+            }
+
+
+
+
+
+
+
+
+
+];
+
+
+// === END OF DATA ===
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        const idx = lunr(function () {
+            this.ref('id');
+            this.field('officer');
+            this.field('tags');
+            this.field('captionTemplate');
+            this.field('dateFormatted');
+            data.forEach((doc, i) => {
+                const date = new Date(doc.dateOfDeath);
+                doc.dateFormatted = date.toLocaleDateString() + ' ' + doc.dateOfDeath.replace(/-/g, '/');
+                doc.id = i;
+                this.add(doc);
+            });
+        });
+
+        function ordinal(n) {
+            const s = ["th", "st", "nd", "rd"], v = n % 100;
+            return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        }
+
+        function calculateYears(dod) {
+            const death = new Date(dod);
+            let years = today.getFullYear() - death.getFullYear();
+            if (today.getMonth() < death.getMonth() || (today.getMonth() === death.getMonth() && today.getDate() < death.getDate())) years--;
+            return years;
+        }
+
+        function formatEOW(dateStr) {
+            const date = new Date(dateStr);
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const y = date.getFullYear();
+            return `${m}/${d}/${y}`;
+        }
+
+        function getMediaPath(officer) {
+            const date = officer.dateOfDeath.replace(/-/g, '');
+            const mmddyy = date.slice(4) + date.slice(2,4);
+            return `files/pictures/${officer.lastName.toLowerCase()}${mmddyy}`;
+        }
+
+        function getTweetId(link) {
+            const match = link?.match(/status\/(\d+)/);
+            return match ? match[1] : null;
+        }
+
+        function displayTodayAndUpcoming() {
+            // (same as previous)
+        }
+
+        function renderResults(results) {
+            const container = document.getElementById('results');
+            container.innerHTML = '';
+            if (results.length === 0) {
+                container.innerHTML = '<p class="text-center text-slate-400 text-2xl">No results found.</p>';
+                return;
+            }
+
+            results.forEach(res => {
+                const officer = data[res.ref];
+                const years = calculateYears(officer.dateOfDeath);
+                const updatedCaption = officer.captionTemplate.replace(/\{years\}/g, years);
+                const mediaBasePath = getMediaPath(officer);
+                const photoPath = mediaBasePath + '.jpg';
+                const videoPath = mediaBasePath + '.mp4';
+                const tweetId = getTweetId(officer.exampleTweetLink);
+
+                const card = document.createElement('div');
+                card.className = 'card p-10';
+
+                card.innerHTML = `
+                    <h2 class="text-4xl font-bold text-nypd-gold mb-4">${officer.officer}</h2>
+                    <p class="text-2xl text-slate-300 mb-10">End of Watch: ${formatEOW(officer.dateOfDeath)} | ${ordinal(years)} Anniversary</p>
+
+                    <div class="grid lg:grid-cols-2 gap-10 mb-10 items-start">
+                        <!-- Left: Media + Download -->
+                        <div class="flex flex-col items-center">
+                            <div class="media-canvas w-full">
+                                <video src="${videoPath}" autoplay loop muted playsinline class="w-full h-full object-contain rounded-2xl shadow-2xl z-10" 
+                                       onerror="this.style.display='none';"
+                                       onload="this.parentElement.classList.add('has-media');"></video>
+                                <img src="${photoPath}" class="w-full h-full object-contain rounded-2xl shadow-2xl z-10" 
+                                     onerror="this.style.display='none';"
+                                     onload="this.style.display='block'; this.previousElementSibling?.style.display='none'; this.parentElement.classList.add('has-media');" />
+                                <div class="placeholder-info flex flex-col items-center justify-center h-full">
+                                    <strong class="text-2xl mb-4">ADD MEDIA</strong>
+                                    <p class="mb-2">Image or silent video</p>
+                                    <code>${officer.lastName.toLowerCase()}${officer.dateOfDeath.replace(/-/g,'').slice(4)}${officer.dateOfDeath.slice(2,4)}.jpg or .mp4</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Full-width Tweet -->
+                        <div class="tweet-container">
+                            ${tweetId ? `<blockquote class="twitter-tweet" data-dnt="true" data-theme="dark"><a href="https://twitter.com/NYPDnews/status/${tweetId}"></a></blockquote>` : '<p class="text-slate-500 text-center text-xl">Tweet Preview</p>'}
+                        </div>
+                    </div>
+
+                    <!-- Bottom Buttons Row -->
+                    <div class="grid lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
+                        <div class="flex justify-center">
+                            <a href="${photoPath}" download class="btn btn-download py-4 px-10 text-lg w-full max-w-xs text-center">
+                                Download Image
+                            </a>
+                        </div>
+                        <div class="flex justify-center">
+                            <button class="btn btn-copy py-4 px-10 text-lg w-full max-w-xs text-center">
+                                Copy Caption
+                            </button>
+                        </div>
+                        ${officer.exampleTweetLink ? `
+                        <div class="flex justify-center">
+                            <a href="${officer.exampleTweetLink}" target="_blank" class="btn btn-see py-4 px-10 text-lg w-full max-w-xs text-center">
+                                See Post
+                            </a>
+                        </div>` : '<div></div>'}
+                    </div>
+                `;
+
+                card.querySelector('.btn-copy').addEventListener('click', () => {
+                    navigator.clipboard.writeText(updatedCaption);
+                });
+
+                container.appendChild(card);
+            });
+
+            if (typeof twttr !== 'undefined') twttr.widgets.load();
+        }
+
+        document.getElementById('search').addEventListener('input', e => {
+            const query = e.target.value.trim();
+            if (query === '') renderResults(data.map((_,i)=>({ref:i})));
+            else renderResults(idx.search(query + '*'));
+        });
+
+        displayTodayAndUpcoming();
+        renderResults(data.map((_,i)=>({ref:i})));
+    </script>
+</body>
+</html>
